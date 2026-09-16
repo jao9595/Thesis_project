@@ -7,15 +7,96 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
 ```
 
 ```{r}
-#Making histograms 
+
+```
+
+
+```{r echo=FALSE}
+# Distribution of each trait - histograms 
+phenotypes <- read.csv("CUHB_phenotypes.csv")
+
 ggplot(phenotypes, aes(x = FHB.DON.content...ppm.CO_321.0001154)) +
+  geom_histogram(binwidth = 0.5)
+
+ggplot(phenotypes, aes(x = FHB.incidence.....CO_321.0001149)) +
+  geom_histogram(binwidth = 0.7)
+
+ggplot(phenotypes, aes(x = FHB.disease.index.....CO_321.0501030)) +
+  geom_histogram(binwidth = 0.5)
+
+ggplot(phenotypes, aes(x = FHB.severity.....CO_321.0001440)) +
   geom_histogram(binwidth = 0.5)
 ```
 
-```{r}
 
+
+```{r echo=FALSE}
+ggplot(phenotypes, aes(x = studyYear, y = FHB.DON.content...ppm.CO_321.0001154, group = studyYear)) +
+  geom_boxplot()
+```
+```{r echo=FALSE}
+ggplot(phenotypes, aes(x = studyYear, y = FHB.disease.index.....CO_321.0501030, group = studyYear)) +
+  geom_boxplot()
+```
+
+
+```{r echo=FALSE}
+ggplot(phenotypes, aes(x = studyYear, y = FHB.incidence.....CO_321.0001149, group = studyYear)) +
+  geom_boxplot()
+```
+
+
+```{r echo=FALSE}
+ggplot(phenotypes, aes(x = studyYear, y = FHB.severity.....CO_321.0001440, group = studyYear)) +
+  geom_boxplot()
+```
+
+```{r}
+ggplot(phenotypes, aes(x = FHB.disease.index.....CO_321.0501030, y = FHB.severity.....CO_321.0001440)) +
+  geom_point()
+
+ggplot(phenotypes, aes(x = FHB.disease.index.....CO_321.0501030, y = FHB.severity.....CO_321.0001440)) +
+  geom_point()
+```
+
+```{r}
+#Checking the names
+
+length(unique(phenotypes$germplasmName)) 
+
+phenotypes %>%
+  count(germplasmName) %>%
+  arrange(desc(n))
+
+phenotypes %>% filter(germplasmName == "CALEDONIA") %>% as.data.frame()
+```
+
+Okay, so im going to try and explain this. So, basically, I wanted to make a graph of how the variables #(DON concentration, disease index) values actually varied from year to year for the top 10 severe/resistant accessions, each year that they were sampled. To do that, I needed to find the mean of all the accesions and get the top 10. I previously thought that the values on the table are just an average of multiple reps from the same accession, as per Tims email because he said that they were averages of 4-5 germplasm. There are 9 years in this table so we would expect to have 9 samples per accession. But alas, we have 17 for some, and only one for others. 
+
+Do accessions behave consistently across years?
+```{r}
+#Code from claude 
+
+library(dplyr)
+
+accession_year_means <- phenotypes %>%
+  group_by(germplasmName, studyYear) %>%
+  summarise(FHB.DON.content...ppm.CO_321.0001154 = mean(FHB.DON.content...ppm.CO_321.0001154, na.rm = TRUE), .groups = "drop")
+
+#compare this with most recent code
+# Step 2: get the accession names of the 10 lowest (requiring at least 3 years of data)
+top_10_names <- filter(don_means, n_years >= 3)
+top_10_names <- top_10_names[order(top_10_names$mean_DON), ][1:10, ]
+
+# Step 3: filter the ORIGINAL dataset down to just those accessions
+top_10 <- filter(CUHB_phenotypes, Accession %in% top_10_names$Accession)
+
+
+
+geom_line(aes(x = studyYear, y = FHB.DON.content...ppm.CO_321.0001154, group = Accession, color = Accession))
 ```
 
