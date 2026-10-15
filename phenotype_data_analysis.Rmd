@@ -83,20 +83,38 @@ Do accessions behave consistently across years?
 
 library(dplyr)
 
-accession_year_means <- phenotypes %>%
-  group_by(germplasmName, studyYear) %>%
-  summarise(FHB.DON.content...ppm.CO_321.0001154 = mean(FHB.DON.content...ppm.CO_321.0001154, na.rm = TRUE), .groups = "drop")
+don_means <- summarise(group_by(phenotypes, germplasmName),
+                        mean_DON = mean(FHB.DON.content...ppm.CO_321.0001154, na.rm = TRUE),
+                        n_years = sum(!is.na(FHB.DON.content...ppm.CO_321.0001154)))
 
-#compare this with most recent code
-# Step 2: get the accession names of the 10 lowest (requiring at least 3 years of data)
+names(don_means)   # confirm both columns are there now
+
 top_10_names <- filter(don_means, n_years >= 3)
 top_10_names <- top_10_names[order(top_10_names$mean_DON), ][1:10, ]
 
 # Step 3: filter the ORIGINAL dataset down to just those accessions
-top_10 <- filter(CUHB_phenotypes, Accession %in% top_10_names$Accession)
+top_10_data <- filter(accession_year_means, germplasmName %in% top_10_names$germplasmName)
+
+library(ggplot2)
+ggplot(top_10_data, aes(x = studyYear, y = FHB.DON.content...ppm.CO_321.0001154, group = germplasmName, color = germplasmName)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "DON content across years for 10 most resistant accessions",
+       y = "DON (ppm)", x = "Year")
+```
+
+```{r}
+
+```
 
 
+```{r}
+# check for exact-match issues within just your top 10 names
+top_10_data %>% 
+  distinct(germplasmName) %>%
+  arrange(germplasmName)
 
-geom_line(aes(x = studyYear, y = FHB.DON.content...ppm.CO_321.0001154, group = Accession, color = Accession))
+# also check against the master list you filtered on
+setdiff(unique(top_10_data$germplasmName), top_10_names$Accession)
 ```
 

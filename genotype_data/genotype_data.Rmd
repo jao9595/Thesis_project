@@ -1,0 +1,48 @@
+---
+title: "Genotype_importand filtering"
+author: "Jennifer"
+date: "2026-09-21"
+output: html_document
+---
+
+# loading packages
+```{r, message=FALSE}
+#install.packages("devtools")
+library(devtools)
+
+#devtools::install_github("TriticeaeToolbox/BrAPI.R")
+library(BrAPI)
+library(tidyverse)
+#install.packages("vcfR")
+library(vcfR)
+
+```
+
+# Making connection to the 
+
+```{r }
+conn <- createBrAPIConnection("wheatcap.triticeaetoolbox.org", is_breedbase = TRUE)
+
+```
+
+
+
+```{r}
+filepath_2025 <- "~/Documents/Honors_thesis/github/Thesis_project/genotype_data/cornell_gbs_2025.vcf"
+conn$vcf_archived(filepath_2025, genotyping_project_id = "12898")
+geno_2025 <- vcfR::read.vcfR(filepath_2025)
+
+filepath_2022 <- 
+conn$vcf_archived(filepath_2022, genotyping_project_id = "18380")
+geno_2022 <- 
+
+filepath_2024 <- 
+conn$vcf_archived(filepath_2024, genotyping_project_id = "12744")
+geno_2024 <- 
+
+filepath_2013 <- 
+conn$vcf_archived(filepath_2013, genotyping_project_id = "8149")
+geno_2013 <- 
+
+```
+

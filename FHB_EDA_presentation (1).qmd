@@ -1,0 +1,179 @@
+---
+title: "FHB Resistance in Winter Wheat"
+subtitle: "Preliminary Phenotypic Data Analysis"
+author: "Jennifer"
+format: revealjs
+editor: visual
+---
+
+```{r setup}
+#| echo: false
+#| warning: false
+#| message: false
+
+library(tidyverse)
+library(GGally)
+
+# Load your data here
+CUHB_phenotypes <- read_csv("CUHB_phenotypes.csv")
+
+#changing the name of the columns 
+
+library(dplyr)
+
+CUHB_phenotypes <- CUHB_phenotypes %>%
+  rename(DON_content = `FHB DON content - ppm|CO_321:0001154`, FHB_incidence = `FHB incidence - %|CO_321:0001149`, disease_index = `FHB disease index - %|CO_321:0501030`, FHB_severity = `FHB severity - %|CO_321:0001440`)
+```
+
+## Overview
+
+- 374 unique accessions
+- Field years: 2013–2016, 2020–2026
+- Traits: FHB incidence (%), severity (%), incidence × severity index (%)
+- DON (ppm) available for a subset of years (2021, 2024, 2025)
+- Tim had said that the values on the csv file were averages, but some germplasms had multiple reps per year while others had only 1 in the entire duration of study.
+
+## Data Coverage (FHB DON content)
+
+```{r}
+#| echo: false
+#| warning: false
+
+# Heatmap of which accessions have data in which years
+# Swap DON for whichever trait, or facet across traits
+CUHB_phenotypes %>%
+  group_by(germplasmName) %>%
+  summarise(n_years_DON = sum(!is.na(DON_content))) %>%
+  count(n_years_DON) %>%
+  arrange(desc(n_years_DON))
+```
+
+## Trait Distributions — Incidence
+
+```{r}
+#| echo: false
+#| warning: false
+
+ggplot(CUHB_phenotypes, aes(x = FHB_incidence)) +
+  geom_histogram(bins = 20, fill = "steelblue", color = "white") +
+  labs(title = "FHB Incidence Distribution", x = "Incidence (%)", y = "Count")
+```
+
+## Trait Distributions — Severity
+
+```{r}
+#| echo: false
+#| warning: false
+
+ggplot(CUHB_phenotypes, aes(x = FHB_severity)) +
+  geom_histogram(bins = 20, fill = "darkorange", color = "white") +
+  labs(title = "FHB Severity Distribution", x = "Severity (%)", y = "Count")
+```
+
+## Trait Distributions — Index
+
+```{r}
+#| echo: false
+#| warning: false
+
+ggplot(CUHB_phenotypes, aes(x = disease_index)) +
+  geom_histogram(bins = 20, fill = "seagreen", color = "white") +
+  labs(title = "FHB Index Distribution", x = "Index (%)", y = "Count")
+```
+
+## Trait Distributions — DON
+
+```{r}
+#| echo: false
+#| warning: false
+
+ggplot(CUHB_phenotypes, aes(x = DON_content)) +
+  geom_histogram(bins = 20, fill = "mediumpurple", color = "white") +
+  labs(title = "DON Content Distribution", x = "DON (ppm)", y = "Count")
+```
+
+## Year-to-Year Variation
+
+```{r}
+#| echo: false
+#| warning: false
+
+ggplot(CUHB_phenotypes, aes(x = factor(studyYear), y = FHB_severity)) +
+  geom_boxplot(fill = "lightblue") +
+  labs(title = "FHB Severity by Year", x = "Year", y = "Severity (%)")
+```
+
+## Trait Relationships
+
+```{r}
+#| echo: false
+#| warning: false
+#| fig-width: 9
+#| fig-height: 6
+
+GGally::ggpairs(CUHB_phenotypes,
+                 columns = c("FHB_incidence", "FHB_severity", "disease_index", "DON_content"))
+```
+
+## Accession Consistency Across Years
+
+```{r}
+#| echo: false
+#| warning: false
+
+don_means <- CUHB_phenotypes %>%
+  group_by(germplasmName) %>%
+  summarise(mean_DON = mean(DON_content, na.rm = TRUE),
+            n_years = sum(!is.na(DON_content)))
+
+top_10_names <- don_means %>%
+  filter(n_years >= 3) %>%
+  arrange(mean_DON) %>%
+  slice_head(n = 10)
+
+top_10_data <- CUHB_phenotypes %>%
+  filter(germplasmName %in% top_10_names$germplasmName)
+
+top_10_data <- top_10_data %>%
+  group_by(germplasmName, studyYear) %>%
+  summarise(DON = mean(DON_content, na.rm = TRUE), .groups = "drop")
+
+# top_10_data should already be built from your earlier filtering steps
+ggplot(top_10_data, aes(x = studyYear, y = DON, group = germplasmName, color = germplasmName)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "DON Content Across Years — 10 Lowest-Mean Accessions",
+       x = "Year", y = "DON (ppm)")
+```
+
+## Disease index consistency across years
+
+```{r}
+# Step 1: means and coverage
+index_means <- CUHB_phenotypes %>%
+  group_by(germplasmName) %>%
+  summarise(mean_Index = mean(disease_index, na.rm = TRUE),
+            n_years = sum(!is.na(disease_index)))
+
+# Step 2: top 10 lowest (most resistant)
+top_10_index_names <- index_means %>%
+  filter(n_years >= 3) %>%
+  arrange(mean_Index) %>%
+  slice_head(n = 10)
+
+# Step 3: filter full dataset to those accessions
+top_10_index_data <- CUHB_phenotypes %>%
+  filter(germplasmName %in% top_10_index_names$germplasmName)
+
+# Step 4: collapse to one value per accession-year
+top_10_index_data <- top_10_index_data %>%
+  group_by(germplasmName, studyYear) %>%
+  summarise(Index = mean(disease_index, na.rm = TRUE), .groups = "drop")
+
+# Plot
+ggplot(top_10_index_data, aes(x = studyYear, y = Index, group = germplasmName, color = germplasmName)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Index Across Years — 10 Lowest-Mean Accessions",
+       x = "Year", y = "Index (%)")
+```
