@@ -1,0 +1,182 @@
+---
+title: "Descriptive statistics of phenotype data"
+author: "Jennifer"
+date: "2026-10-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r}
+#Making the first plot 
+library(readr)
+library(tidyverse)
+CUHB_phenotypes <- read_csv("CUHB_phenotypes.csv")
+
+DON_phenotype_data <- CUHB_phenotypes |> 
+  rename( Year = studyYear, accession = germplasmName, DON_concentration = `FHB DON content - ppm|CO_321:0001154`, FHB_index = `FHB disease index - %|CO_321:0501030`, FHB_incidence = `FHB incidence - %|CO_321:0001149`, FHB_severity = `FHB severity - %|CO_321:0001440`) |> 
+  select(c(Year, DON_concentration)) |>
+  na.omit() |>
+  ggplot(aes(x = as.character(Year), y = DON_concentration)) +
+  geom_violin()
+
+DON_phenotype_data
+
+CUHB_cleaned <- 
+  CUHB_phenotypes |> 
+  rename( Year = studyYear, accession = germplasmName, DON_concentration = `FHB DON content - ppm|CO_321:0001154`, FHB_index = `FHB disease index - %|CO_321:0501030`, FHB_incidence = `FHB incidence - %|CO_321:0001149`, FHB_severity = `FHB severity - %|CO_321:0001440`) 
+
+
+CUHB_cleaned |> 
+  select(c(DON_concentration, FHB_index, FHB_incidence, FHB_severity)) |>
+summary() |>
+  knitr::kable()
+```
+
+```{r}
+#Density curves of traits
+
+#DON density curve
+DON_dist <- CUHB_cleaned |> 
+  ggplot(aes(x = DON_concentration)) +
+  geom_density()
+
+DON_dist
+
+#Index density curve
+index_dist <- CUHB_cleaned |> 
+  ggplot(aes(x = FHB_index)) +
+  geom_density()
+
+index_dist
+
+#Incidence density curve
+incidence_dist <- CUHB_cleaned |> 
+  ggplot(aes(x = FHB_incidence)) +
+  geom_density()
+
+incidence_dist
+
+#Severity density curve
+severity_dist <- CUHB_cleaned |> 
+  ggplot(aes(x = FHB_severity)) +
+  geom_density()
+
+severity_dist
+```
+
+```{r}
+#Using code that claude gave me
+
+# Publication-style trait distributions (histogram + density + mean line)
+# Uses your CUHB_cleaned data frame and column names.
+# Requires: ggplot2, patchwork
+
+library(ggplot2)
+library(patchwork)
+
+# ---- EDIT: column name = axis label (check the units!) -------------------
+traits <- c(
+  "DON_concentration" = "DON concentration (ppm)",
+  "FHB_index"         = "FHB index (%)",
+  "FHB_incidence"     = "FHB incidence (%)",
+  "FHB_severity"      = "FHB severity (%)"
+)
+fill_col <- "#0072B2"   # colorblind-safe blue
+# --------------------------------------------------------------------------
+
+plot_trait <- function(df, trait, xlab) {
+  df <- df[!is.na(df[[trait]]), ]   # drop NAs for this trait only
+  x <- df[[trait]]
+  m <- mean(x)
+
+  ggplot(df, aes(x = .data[[trait]])) +
+    # histogram scaled to density so the curve sits on the same axis
+    geom_histogram(aes(y = after_stat(density)), bins = 30,
+                   fill = fill_col, alpha = 0.3, colour = "white",
+                   linewidth = 0.2) +
+    geom_density(colour = fill_col, linewidth = 0.8) +
+    # mean marked with a dashed line
+    geom_vline(xintercept = m, linetype = "dashed", colour = "grey20",
+               linewidth = 0.5) +
+    # small rug shows individual observations along the axis
+    geom_rug(colour = fill_col, alpha = 0.25, length = unit(0.02, "npc")) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+    labs(x = xlab, y = "Density") +
+    theme_classic(base_size = 11) +
+    theme(axis.text = element_text(colour = "black"))
+}
+
+panels <- Map(function(tr, lab) plot_trait(CUHB_cleaned, tr, lab),
+              names(traits), unname(traits))
+
+fig <- wrap_plots(panels, ncol = 2) +
+  plot_annotation(tag_levels = "A")
+
+fig
+
+# Double-column width (~7 in); adjust height to taste
+ggsave("fig_trait_distributions.pdf", fig, width = 7, height = 5.5)
+ggsave("fig_trait_distributions.png", fig, width = 7, height = 5.5, dpi = 300)
+
+```
+
+```{r}
+# ---- Optional: split by year (swap `year` for your column name) ----------
+library(ggridges)   # only needed for the ridgeline version
+
+trait_labels <- c(
+  DON_concentration = "DON concentration (ppm)",
+  FHB_index         = "FHB index (%)",
+  FHB_incidence     = "FHB incidence (%)",
+  FHB_severity      = "FHB severity (%)"
+)
+
+dat_long <- CUHB_cleaned |>
+  select(Year, all_of(names(trait_labels))) |>
+  pivot_longer(-Year, names_to = "trait", values_to = "value") |>
+  drop_na(Year, value) |>   # drops NAs per trait, not whole rows
+  mutate(trait = factor(trait, levels = names(trait_labels)),
+         Year  = factor(Year))
+
+# Number of observations behind each panel (useful for the legend)
+dat_long |> count(trait)
+
+dat_long |>
+  ggplot(aes(x = value)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 30,
+                 fill = "#0072B2", alpha = 0.3, colour = "white") +
+  geom_density(colour = "#0072B2", linewidth = 0.8) +
+  geom_vline(data = dat_long |> summarise(m = mean(value), .by = trait),
+             aes(xintercept = m), linetype = "dashed") +
+  facet_wrap(~ trait, scales = "free", ncol = 2,
+             labeller = as_labeller(trait_labels),
+             strip.position = "bottom") +
+  labs(x = NULL, y = "Density") +
+  theme_classic(base_size = 11) +
+  theme(strip.placement = "outside",
+        strip.background = element_blank(),
+        strip.text = element_text(size = 11))
+
+
+
+fig_ridge <- dat_long |>
+  ggplot(aes(x = value, y = Year, fill = Year)) +
+  geom_density_ridges(alpha = 0.6, scale = 1.2, linewidth = 0.3,
+                      show.legend = FALSE) +
+  scale_fill_viridis_d(option = "turbo") +
+  facet_wrap(~ trait, scales = "free_x", ncol = 2,
+             labeller = as_labeller(trait_labels),
+             strip.position = "bottom") +
+  labs(x = NULL, y = "Year") +
+  theme_classic(base_size = 11) +
+  theme(strip.placement = "outside",
+        strip.background = element_blank())
+
+ggsave("fig_trait_distributions_ridges.png", fig_ridge,
+       width = 7, height = 8, dpi = 300)
+```
+
