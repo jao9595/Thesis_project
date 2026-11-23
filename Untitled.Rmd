@@ -21,6 +21,7 @@ DON_phenotype_data <- CUHB_phenotypes |>
   select(c(Year, DON_concentration)) |>
   na.omit() |>
   ggplot(aes(x = as.character(Year), y = DON_concentration)) +
+  labs(x = "Year", y = ylab) +
   geom_violin()
 
 DON_phenotype_data

@@ -1,0 +1,123 @@
+---
+title: "NUWWSN data"
+author: "Jennifer"
+date: "2026-11-23"
+output: html_document
+---
+
+```{r}
+# Filter the raw FHB phenotype file to only the accessions on your list,
+# matching on either the accession name or its synonym(s).
+
+library(readxl)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(writexl)   
+
+#install.packages(c("readxl","dplyr","stringr","tidyr","writexl"))
+
+
+
+```
+
+
+```{r}
+
+# ---- EDIT THESE to match your files and column names ------------------------
+raw_file      <- "raw_NUWWSN.csv"
+list_file     <- "samplename_request.xlsx"
+raw_name_col  <- "germplasmName"   # accession name column in the raw file
+raw_syn_col   <- "germplasmSynonyms"     # synonym column in the raw file
+list_name_col <- "FullSampleName"   # accession column in your list file
+year_col      <- "studyYear"        # used to sort earliest -> latest
+syn_delim     <- "[,]"        # how multiple synonyms are separated in one cell
+# -----------------------------------------------------------------------------
+
+raw  <- readr::read_csv(raw_file, show_col_types = FALSE)
+keep <- read_excel(list_file)
+
+# Normalise names so "PI 12345", "pi12345" and "PI-12345 " all match
+clean <- function(x) {
+  x <- str_to_upper(str_squish(as.character(x)))
+  str_remove_all(x, "[\\s_-]")
+}
+
+raw <- raw %>% mutate(.row = row_number())
+
+# Every name each raw row is known by (main name + each synonym)
+raw_names <- raw %>%
+  transmute(.row,
+            name = as.character(.data[[raw_name_col]]),
+            syn  = as.character(.data[[raw_syn_col]])) %>%
+  pivot_longer(c(name, syn), names_to = "matched_via", values_to = "id") %>%
+  separate_longer_delim(id, delim = regex(syn_delim)) %>%
+  mutate(key = clean(id)) %>%
+  filter(!is.na(key), key != "", key != "NA")
+
+list_keys <- keep %>%
+  transmute(list_name = as.character(.data[[list_name_col]]),
+            key = clean(list_name)) %>%
+  filter(!is.na(key), key != "") %>%
+  distinct(key, .keep_all = TRUE)
+
+# Match; prefer a match on the main name over a synonym
+matches <- raw_names %>%
+  inner_join(list_keys, by = "key") %>%
+  arrange(.row, matched_via) %>%            # "name" sorts before "syn"
+  group_by(.row) %>%
+  summarise(n_list_hits = n_distinct(list_name),
+            list_name   = first(list_name),
+            matched_via = first(matched_via),
+            .groups = "drop")
+
+filtered <- raw %>%
+  inner_join(matches, by = ".row") %>%
+  relocate(list_name, matched_via, .after = all_of(raw_name_col)) %>%
+  arrange(.data[[year_col]]) %>%
+  select(-.row)
+
+# Accessions on your list that were not found in the raw file at all
+not_found <- list_keys %>%
+  anti_join(raw_names, by = "key") %>%
+  select(list_name)
+
+# Raw rows whose names/synonyms hit more than one accession on your list
+ambiguous <- filtered %>% filter(n_list_hits > 1)
+
+write_xlsx(list(filtered = select(filtered, -n_list_hits),
+                not_found = not_found,
+                ambiguous = ambiguous),
+           "raw_filtered.xlsx")
+
+message(nrow(raw), " raw rows -> ", nrow(filtered), " kept\n",
+        n_distinct(filtered$list_name), " of ", nrow(list_keys),
+        " list accessions found (", sum(filtered$matched_via == "syn"),
+        " rows matched via synonym)\n",
+        nrow(not_found), " list accessions not found -> see 'not_found' sheet\n",
+        nrow(ambiguous), " ambiguous rows -> see 'ambiguous' sheet")
+
+```
+
+
+```{r}
+#Combining NUWWSN and CUHB
+raw_a <- readr::read_csv("raw_NUWWSN.csv", show_col_types = FALSE, col_types = readr::cols(.default = "c"))
+raw_b <- readr::read_csv("CUHB_raw.csv", show_col_types = FALSE, col_types = readr::cols(.default = "c"))
+
+# 1. Compare column names: run these and look at the output
+setdiff(names(raw_a), names(raw_b))   # only in raw
+setdiff(names(raw_b), names(raw_a))   # only in new
+
+# If the same column is spelled differently, rename it in 'new' to match raw, e.g.:
+# raw_b <- rename(raw_b, Year = YEAR, Incidence = INC)
+
+# 2. Stack them. Columns only in one file get NA for the other file's rows
+raw <- bind_rows(
+  mutate(raw_a, across(everything(), as.character), source_file = "raw"),
+  mutate(raw_b, across(everything(), as.character), source_file = "new")
+) %>%
+  readr::type_convert(na = c("", "NA", ".", "-", "*", "n/a"))
+```
+
+
