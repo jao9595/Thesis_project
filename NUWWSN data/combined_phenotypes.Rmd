@@ -1,0 +1,124 @@
+---
+title: "combined_files"
+author: "Jennifer"
+date: "2026-11-23"
+output: html_document
+---
+
+```{r}
+
+# Combine the 'raw' and 'new' FHB phenotype files, then keep only the
+# accessions on your list (matching on accession name OR synonym).
+
+library(readxl)
+library(readr)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(writexl)   # install.packages(c("readxl","readr","dplyr","stringr","tidyr","writexl")) if needed
+
+# ---- 1. EDIT THESE to match your files and column names ---------------------
+raw_file      <- "raw_NUWWSN.csv"
+new_file      <- "CUHB_raw.csv"
+list_file     <- "samplename_request.xlsx"   # change to read_csv below if it's a .csv
+raw_name_col  <- "germplasmName"   # accession name column in the raw/new files
+raw_syn_col   <- "germplasmSynonyms"     # synonym column in the raw file
+list_name_col <- "FullSampleName"   # accession column in your list file
+year_col      <- "studyYear"        # used to sort earliest -> latest
+loc_col       <- "locationName"    # used to flag duplicates between files
+syn_delim     <- "[,]"        # how multiple synonyms are separated in one cell
+na_values     <- c("", "NA", ".", "-", "*", "n/a")   # placeholders meaning "missing"
+# -----------------------------------------------------------------------------
+
+# ---- 2. Read both files as text (so nothing is lost) -------------------------
+raw_a <- read_csv(raw_file, show_col_types = FALSE, col_types = cols(.default = "c"))
+raw_b <- read_csv(new_file, show_col_types = FALSE, col_types = cols(.default = "c"))
+
+# Columns that differ between the files -- check these printouts
+message("Only in raw: ", paste(setdiff(names(raw_a), names(raw_b)), collapse = ", "))
+message("Only in new: ", paste(setdiff(names(raw_b), names(raw_a)), collapse = ", "))
+
+# If the same column is spelled differently in 'new', rename it to match raw:
+# raw_b <- rename(raw_b, Year = YEAR)      # new_name = old_name
+
+# ---- 3. Combine into one dataset called 'raw' --------------------------------
+raw <- bind_rows(
+  mutate(raw_a, source_file = "raw"),
+  mutate(raw_b, source_file = "new")
+) %>%
+  type_convert(na = na_values)
+
+# ---- 4. Read your accession list --------------------------------------------
+keep <- read_excel(list_file)
+# keep <- read_csv(list_file, show_col_types = FALSE)   # use this instead if it's a .csv
+
+# ---- 5. Filter to the accessions on your list -------------------------------
+clean <- function(x) {
+  x <- str_to_upper(str_squish(as.character(x)))
+  str_remove_all(x, "[\\s_-]")
+}
+
+raw <- raw %>% mutate(.row = row_number())
+
+# If 'new' has no synonym column, make sure one exists so the code below works
+if (!raw_syn_col %in% names(raw)) raw[[raw_syn_col]] <- NA_character_
+
+raw_names <- raw %>%
+  transmute(.row,
+            name = as.character(.data[[raw_name_col]]),
+            syn  = as.character(.data[[raw_syn_col]])) %>%
+  pivot_longer(c(name, syn), names_to = "matched_via", values_to = "id") %>%
+  separate_longer_delim(id, delim = regex(syn_delim)) %>%
+  mutate(key = clean(id)) %>%
+  filter(!is.na(key), key != "", key != "NA")
+
+list_keys <- keep %>%
+  transmute(list_name = as.character(.data[[list_name_col]]),
+            key = clean(list_name)) %>%
+  filter(!is.na(key), key != "") %>%
+  distinct(key, .keep_all = TRUE)
+
+matches <- raw_names %>%
+  inner_join(list_keys, by = "key") %>%
+  arrange(.row, matched_via) %>%            # prefer main name over synonym
+  group_by(.row) %>%
+  summarise(n_list_hits = n_distinct(list_name),
+            list_name   = first(list_name),
+            matched_via = first(matched_via),
+            .groups = "drop")
+
+filtered <- raw %>%
+  inner_join(matches, by = ".row") %>%
+  relocate(list_name, matched_via, source_file, .after = all_of(raw_name_col)) %>%
+  arrange(.data[[year_col]]) %>%
+  select(-.row)
+
+# ---- 6. Checks ---------------------------------------------------------------
+not_found <- list_keys %>%
+  anti_join(raw_names, by = "key") %>%
+  select(list_name)
+
+ambiguous <- filtered %>% filter(n_list_hits > 1)
+
+# Same accession + year + location present in BOTH files
+dups <- filtered %>%
+  group_by(list_name, .data[[year_col]], .data[[loc_col]]) %>%
+  filter(n_distinct(source_file) > 1) %>%
+  ungroup() %>%
+  arrange(list_name, .data[[year_col]], .data[[loc_col]])
+
+# ---- 7. Save -----------------------------------------------------------------
+write_xlsx(list(filtered  = select(filtered, -n_list_hits),
+                not_found = not_found,
+                ambiguous = ambiguous,
+                dups      = dups),
+           "combined_filtered.xlsx")
+
+message(nrow(raw), " combined rows -> ", nrow(filtered), " kept\n",
+        n_distinct(filtered$list_name), " of ", nrow(list_keys),
+        " list accessions found\n",
+        nrow(not_found), " not found | ",
+        nrow(ambiguous), " ambiguous | ",
+        nrow(dups), " rows in both files")
+```
+
